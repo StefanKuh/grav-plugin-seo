@@ -631,7 +631,7 @@ class seoPlugin extends Plugin
                       '@type' => 'Thing',
                       'name' => @$page->header()->product['brand'],
                       ],
-                  'offers' => $offer,
+                  // 'offers' => $offer,
                   'description' => @$page->header()->product['description'],
                   'image' => @$productimage,
                   'aggregateRating' => [

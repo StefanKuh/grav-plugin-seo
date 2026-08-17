@@ -35,7 +35,7 @@ use Grav\Common\Iterator;
  * and appearance on Search Engine Results and Social Networks.
  */
 
-class seoPlugin extends Plugin
+class SeoPlugin extends Plugin
 {
 
     /** -------------
@@ -58,79 +58,148 @@ class seoPlugin extends Plugin
           //  'onBlueprintCreated' => ['onBlueprintCreated',  0]
         ];
     }
-    public function array_filter_recursive( array $array, callable $callback = null ) {
-    $array = is_callable( $callback ) ? array_filter( $array, $callback ) : array_filter( $array );
-    foreach ( $array as &$value ) {
-        if ( is_array( $value ) ) {
-            $myfunc = '$this->' . __FUNCTION__;
-            $value = $this->array_filter_recursive($value);
+
+    private function cleanArray(array $array): array 
+{
+    foreach ($array as $key => &$value) {
+        if (is_array($value)) {
+            $value = $this->cleanArray($value);
+        }
+        
+        if (empty($value) && $value !== 0 && $value !== '0') {
+            unset($array[$key]);
         }
     }
- 
-        return $array;
-    }
-    private function seoGetimage($imageurl){
-        $imagedata = [];
-        $pattern = '~((\/[^\/]+)+)\/([^\/]+)~';
-        $replacement = '$1';
-        $fixedurl = preg_replace($pattern, $replacement, $imageurl);
-        $imagename = preg_replace($pattern, '$3', $imageurl);
-        $imgarray = $this->grav['page']->find($fixedurl)->media()->images();
-        $keyimages = array_keys($imgarray);
-        $imgkey = array_search($imagename, $keyimages);
-        $keyvalue = $keyimages[$imgkey];
-        //$imgkey = array_shift($imgarray);
-        $imgobject = $imgarray[$keyvalue];
-         
-        $im = getimagesize($imgobject->path());
-        $imagedata = [
-        'width' => "$im[0]",
-        'height' => "$im[1]",
-        'url' => $imgobject->url(),
+    
+    return $array;
+}
+  
+/**
+ * Récupère les métadonnées d'une image (dimensions et URL)
+ * 
+ * @param string|null $imageUrl URL de l'image à analyser
+ * @return array{width: string, height: string, url: string}
+ */
+private function seoGetImage(?string $imageUrl): array
+{
+    // Si l'URL est vide, retourner directement les valeurs par défaut
+    if (empty($imageUrl)) {
+        return [
+            'width' => '0',
+            'height' => '0',
+            'url' => '',
         ];
-        return $imagedata;
     }
-    private function cleanMarkdown($text){
-        $text=strip_tags($text);
-        $rules = array (
-            '/{%[\s\S]*?%}[\s\S]*?/'                 => '',    // remove twig include
-            '/<style(?:.|\n|\r)*?<\/style>/'         => '',    // remove style tags
-            '/<script[\s\S]*?>[\s\S]*?<\/script>/'   => '',  // remove script tags
-            '/(#+)(.*)/'                             => '\2',  // headers
-            '/(&lt;|<)!--\n((.*|\n)*)\n--(&gt;|\>)/' => '',    // comments
-            '/(\*|-|_){3}/'                          => '',    // hr
-            '/!\[([^\[]+)\]\(([^\)]+)\)/'            => '',    // images
-            '/\[([^\[]+)\]\(([^\)]+)\)/'             => '\1',  // links
-            '/(\*\*|__)(.*?)\1/'                     => '\2',  // bold
-            '/(\*|_)(.*?)\1/'                        => '\2',  // emphasis
-            '/\~\~(.*?)\~\~/'                        => '\1',  // del
-            '/\:\"(.*?)\"\:/'                        => '\1',  // quote
-            '/```(.*)\n((.*|\n)+)\n```/'             => '\2',  // fence code
-            '/`(.*?)`/'                              => '\1',  // inline code
-            '/(\*|\+|-)(.*)/'                        => '\2',  // ul lists
-            '/\n[0-9]+\.(.*)/'                       => '\2',  // ol lists
-            '/(&gt;|\>)+(.*)/'                       => '\2',  // blockquotes
-            
-            
-            );
-        $text=str_replace(".\n", '.', $text);
-        $text=str_replace("\n", '. ', $text);
-        $text=str_replace('"', '', $text);
-        $text=str_replace('<p', '', $text);
-        $text=str_replace('</p>', '', $text);
-        
-        foreach ($rules as $regex => $rep) {
-            if (is_callable ( $rep)) {
-               $text = preg_replace_callback ($regex, $rep, $text);
-            } else {
-                $text = preg_replace ($regex, $rep, $text);
-            }
+
+    try {
+        // Extraction du chemin et du nom de fichier
+        if (!preg_match('~((\/[^\/]+)+)\/([^\/]+)~', $imageUrl, $matches)) {
+            throw new \RuntimeException('Format d\'URL invalide');
         }
+
+        $imagePath = $matches[1];
+        $imageName = $matches[3];
+
+        // Récupération de la page
+        $page = $this->grav['page']->find($imagePath);
+        if (!$page) {
+            throw new \RuntimeException("Page non trouvée: $imagePath");
+        }
+
+        // Vérification de la présence d'images
+        $images = $page->media()->images();
+        if (empty($images)) {
+            throw new \RuntimeException("Aucune image trouvée");
+        }
+
+        // Recherche de l'image spécifique
+        $availableImages = array_keys($images);
+        $imageIndex = array_search($imageName, $availableImages);
+        if ($imageIndex === false) {
+            throw new \RuntimeException("Image spécifique non trouvée");
+        }
+
+        $imageKey = $availableImages[$imageIndex];
+        $image = $images[$imageKey];
         
+        // Vérification du chemin de l'image
+        if (!$image || !$image->path() || !file_exists($image->path())) {
+            throw new \RuntimeException("Fichier image invalide ou inaccessible");
+        }
+
+        $dimensions = @getimagesize($image->path());
+        if ($dimensions === false) {
+            throw new \RuntimeException("Impossible de lire les dimensions de l'image");
+        }
+
+        return [
+            'width' => (string)$dimensions[0],
+            'height' => (string)$dimensions[1],
+            'url' => $image->url(),
+        ];
+
+    } catch (\Exception $e) {
+        // Log l'erreur mais ne casse pas le site
+        $this->grav['log']->debug('SEO Plugin - Image Warning: ' . $e->getMessage());
         
-        return substr($text,0,320);
-        // htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+        return [
+            'width' => '0',
+            'height' => '0',
+            'url' => '',
+        ];
     }
+}
+    /**
+ * Nettoie et convertit le texte Markdown en texte brut
+ * 
+ * @param string $text Le texte Markdown à nettoyer
+ * @param int $maxLength Longueur maximale du texte retourné (défaut: 320)
+ * @return string Le texte nettoyé
+ */
+    private const MARKDOWN_RULES = [
+        // Suppression des inclusions Twig
+        '/{%[\s\S]*?%}[\s\S]*?/' => '',
+        
+        // Suppression des balises HTML spécifiques
+        '/<style[^>]*?>.*?<\/style>/si' => '',
+        '/<script[^>]*?>.*?<\/script>/si' => '',
+        
+        // Conversion de la syntaxe Markdown
+        '/^#+\s*(.*)$/m' => '$1',                  // Titres
+        '/^[*\-_]{3,}$/m' => '',                   // Lignes horizontales
+        '/!\[([^\]]*)\]\([^)]+\)/' => '',          // Images
+        '/\[([^\]]+)\]\([^)]+\)/' => '$1',         // Liens
+        '/[*_]{2}(.*?)[*_]{2}/' => '$1',           // Gras
+        '/[*_](.*?)[*_]/' => '$1',                 // Italique
+        '/~~(.*?)~~/' => '$1',                     // Barré
+        '/:`(.*?)`/' => '$1',                      // Code inline
+        '/^```[\s\S]*?```$/m' => '',               // Blocs de code
+        '/^[*\-+]\s+(.*)$/m' => '$1',              // Listes non ordonnées
+        '/^\d+\.\s+(.*)$/m' => '$1',               // Listes ordonnées
+        '/^>\s*(.*)$/m' => '$1',                   // Citations
+        '/<!--[\s\S]*?-->/' => '',                 // Commentaires HTML
+    ];
+
+    private function cleanMarkdown(string $text, int $maxLength = 320): string 
+{
+
+    // Nettoyage initial
+    $text = strip_tags($text);
+
+    // Application des règles de nettoyage Markdown
+    foreach (self::MARKDOWN_RULES as $pattern => $replacement) {
+        $text = preg_replace($pattern, $replacement, $text);
+    }
+
+    // Nettoyage final
+    $text = preg_replace('/\s+/', ' ', $text);           // Remplace les espaces multiples
+    $text = str_replace(["\r", "\n"], ' ', $text);       // Remplace les retours à la ligne
+    $text = preg_replace('/\. \./', '.', $text);         // Corrige la ponctuation
+    $text = trim($text);                                 // Supprime les espaces aux extrémités
+
+    // Retourne le texte tronqué à la longueur maximale
+    return mb_substr($text, 0, $maxLength);
+}
     
 
     /**
@@ -314,140 +383,202 @@ class seoPlugin extends Plugin
       $page->metadata($meta);
         // Set Json-Ld Microdata
         // Article Microdata
-      if (property_exists($page->header(),'musiceventenabled')){
-       if (($page->header()->musiceventenabled) and $this->config['plugins']['seo']['musicevent']) {
-           $musiceventsarray = $page->header()->musicevents;
-            if (count($musiceventsarray) > 0) {
-           foreach ($musiceventsarray as $event) {
-              if (isset($event['musicevent_performer'])){
-              foreach ($event['musicevent_performer'] as $artist){
-              $performerarray[] = [
-                  '@type' => @$artist['performer_type'],
-                  'name' => @$artist['name'],
-                  'sameAs' => @$artist['sameAs'], 
-                  ];
-               
-              };
-              }
-              if (isset($event['musicevent_workPerformed'])){
-              foreach ($event['musicevent_workPerformed'] as $work){
-              $workarray[] = [
-                  'name' => @$work['name'],
-                  'sameAs' => @$work['sameAs'], 
-                  ];
-               
-              }
-           }
-            if (isset($event['musicevent_image'])){
-            $imageurl = $event['musicevent_image'];
-            $imagedata = $this->seoGetimage($imageurl);
-            $musiceventimage = [
-                 
-                      '@type' => 'ImageObject',
-                      'width' => $imagedata['width'],
-                      'height' => $imagedata['height'],
-                      'url' => $this->grav['uri']->base() .  $imagedata['url'],
-                      
-                      ];
-                
-            }
-              $microdata[] = [
-                  '@context' => 'http://schema.org',
-                  '@type' => 'MusicEvent',
-                  'name' => @$event['musicevent_location_name'],
-                  'location' => [
-                      '@type' => 'MusicVenue',
-                      'name' => @$event['musicevent_location_name'],
-                      'address' => @$event['musicevent_location_address'],
-                      ],
-                  'description' => @$event['musicevent_description'],
-                  'url' => @$event['musicevent_url'],
-                  'performer' => @$performerarray,
-                  'workPerformed' => @$workarray, 
-                  'image' => @$musiceventimage,
-                  'offers' => [
-                      '@type' => 'Offer',
-                      'price' => @$event['musicevent_offers_price'],
-                      'priceCurrency' => @$event['musicevent_offers_priceCurrency'],
-                      'url' => @$event['musicevent_offers_url'], 
-                      ],
-                  'startDate' => @date("c", strtotime($event['musicevent_startdate'])),
-                  'endDate' => @date("c", strtotime($event['musicevent_enddate'])),
-                  
-                  ];
-              
-              
-            }
-            }
-       }   
-       }
-       if (property_exists($page->header(),'eventenabled')){
-       if ($page->header()->eventenabled and $this->config['plugins']['seo']['event']) {
-           $eventsarray = @$page->header()->addevent;
-           
-           if (count($eventsarray) > 0) {
-           foreach ($eventsarray as $event) {
-              $microdata[] = [
-                  '@context' => 'http://schema.org',
-                  '@type' => 'Event',
-                  'name' => @$event['event_name'],
-                  
-                  'location' => [
-                      '@type' => 'Place',
-                      'name' => @$event['event_location_name'],
-                      'address' => [
-                          '@type' => 'PostalAddress',
-                          'addressLocality' => @$event['event_location_address_addressLocality'],
-                          'addressRegion' => @$event['event_location_address_addressRegion'],
-                          'streetAddress' => @$event['event_location_streetAddress'],
-                          ],
-                       'url' => @$event['musicevent_location_url'],
-                      ],
-                  'description' => @$event['musicevent_description'],
-                  'offers' => [
-                      '@type' => 'Offer',
-                      'price' => @$event['event_offers_price'],
-                      'priceCurrency' => @$event['event_offers_currency'],
-                      'url' => @$event['event_offers_url'], 
-                      ],
-                  'startDate' => @date("c", strtotime($event['event_startDate'])),
-                  'endDate' => @date("c", strtotime($event['event_endDate'])),
-                  'description' => @$event['event_description'],
-                  
-                  ];
-              
-              
-            }
-           }
-           
-       }
-       }
-     if (property_exists($page->header(),'personenabled')){
-        if ($page->header()->personenabled and $this->config['plugins']['seo']['person']) {
-            $personarray = @$page->header()->addperson;
-            if (count($personarray) > 0) {
-           foreach ($personarray as $person) {
-              $microdata[] = [
-                  '@context' => 'http://schema.org',
-                  '@type' => 'Person',
-                  'name' => @$person['person_name'],
-                  
-                  'address' => [
-                      '@type' => 'PostalAddress',
-                      'addressLocality' => @$person['person_address_addressLocality'],
-                      'addressRegion' => @$person['person_address_addressRegion'],
-                      ],
-                  'jobTitle' => @$person['person_jobTitle'],
-                  
-                  ];
-            
+     if (property_exists($page->header(), 'musiceventenabled')) {
+    if ($page->header()->musiceventenabled && $this->config['plugins']['seo']['musicevent']) {
+        $musiceventsarray = $page->header()->musicevents ?? [];
+        
+        // Vérifier que nous avons un array valide et non vide
+        if (is_array($musiceventsarray) && !empty($musiceventsarray)) {
+            foreach ($musiceventsarray as $event) {
+                $performerarray = [];  // Initialiser pour chaque événement
+                $workarray = [];       // Initialiser pour chaque événement
+                $musiceventimage = null;  // Initialiser pour chaque événement
 
-       }
-                
+                // Gestion des performers
+                if (!empty($event['musicevent_performer']) && is_array($event['musicevent_performer'])) {
+                    foreach ($event['musicevent_performer'] as $artist) {
+                        $performerarray[] = [
+                            '@type' => $artist['performer_type'] ?? 'PerformingGroup',
+                            'name' => $artist['name'] ?? '',
+                            'sameAs' => $artist['sameAs'] ?? '',
+                        ];
+                    }
+                }
+
+                // Gestion des œuvres interprétées
+                if (!empty($event['musicevent_workPerformed']) && is_array($event['musicevent_workPerformed'])) {
+                    foreach ($event['musicevent_workPerformed'] as $work) {
+                        $workarray[] = [
+                            'name' => $work['name'] ?? '',
+                            'sameAs' => $work['sameAs'] ?? '',
+                        ];
+                    }
+                }
+
+                // Gestion de l'image
+                if (!empty($event['musicevent_image'])) {
+                    $imagedata = $this->seoGetImage($event['musicevent_image']);
+                    if (!empty($imagedata['url'])) {
+                        $musiceventimage = [
+                            '@type' => 'ImageObject',
+                            'width' => $imagedata['width'],
+                            'height' => $imagedata['height'],
+                            'url' => $this->grav['uri']->base() . $imagedata['url'],
+                        ];
+                    }
+                }
+
+                // Construction de l'événement
+                $eventData = [
+                    '@context' => 'http://schema.org',
+                    '@type' => 'MusicEvent',
+                    'name' => $event['musicevent_location_name'] ?? '',
+                    'location' => [
+                        '@type' => 'MusicVenue',
+                        'name' => $event['musicevent_location_name'] ?? '',
+                        'address' => $event['musicevent_location_address'] ?? '',
+                    ],
+                    'description' => $event['musicevent_description'] ?? '',
+                    'url' => $event['musicevent_url'] ?? '',
+                    'offers' => [
+                        '@type' => 'Offer',
+                        'price' => $event['musicevent_offers_price'] ?? '',
+                        'priceCurrency' => $event['musicevent_offers_priceCurrency'] ?? '',
+                        'url' => $event['musicevent_offers_url'] ?? '',
+                    ],
+                ];
+
+                // Ajouter les champs optionnels seulement s'ils existent
+                if (!empty($performerarray)) {
+                    $eventData['performer'] = $performerarray;
+                }
+                if (!empty($workarray)) {
+                    $eventData['workPerformed'] = $workarray;
+                }
+                if ($musiceventimage) {
+                    $eventData['image'] = $musiceventimage;
+                }
+
+                // Gestion des dates
+                if (!empty($event['musicevent_startdate'])) {
+                    $eventData['startDate'] = date("c", strtotime($event['musicevent_startdate']));
+                }
+                if (!empty($event['musicevent_enddate'])) {
+                    $eventData['endDate'] = date("c", strtotime($event['musicevent_enddate']));
+                }
+
+                $microdata[] = $eventData;
             }
-            
         }
+    }
+}
+       if (property_exists($page->header(), 'eventenabled')) {
+    if ($page->header()->eventenabled && $this->config['plugins']['seo']['event']) {
+        $eventsarray = $page->header()->addevent ?? [];
+        
+        // Vérifier que nous avons un array valide et non vide
+        if (is_array($eventsarray) && !empty($eventsarray)) {
+            foreach ($eventsarray as $event) {
+                // Préparer l'adresse seulement si les données nécessaires existent
+                $address = [
+                    '@type' => 'PostalAddress',
+                ];
+                
+                // Ajouter les champs d'adresse seulement s'ils existent
+                if (!empty($event['event_location_address_addressLocality'])) {
+                    $address['addressLocality'] = $event['event_location_address_addressLocality'];
+                }
+                if (!empty($event['event_location_address_addressRegion'])) {
+                    $address['addressRegion'] = $event['event_location_address_addressRegion'];
+                }
+                if (!empty($event['event_location_streetAddress'])) {
+                    $address['streetAddress'] = $event['event_location_streetAddress'];
+                }
+
+                // Préparer l'offre seulement si les données nécessaires existent
+                $offers = [
+                    '@type' => 'Offer',
+                ];
+                if (!empty($event['event_offers_price'])) {
+                    $offers['price'] = $event['event_offers_price'];
+                }
+                if (!empty($event['event_offers_currency'])) {
+                    $offers['priceCurrency'] = $event['event_offers_currency'];
+                }
+                if (!empty($event['event_offers_url'])) {
+                    $offers['url'] = $event['event_offers_url'];
+                }
+
+                // Construction de l'événement de base
+                $eventData = [
+                    '@context' => 'http://schema.org',
+                    '@type' => 'Event',
+                    'name' => $event['event_name'] ?? '',
+                    'location' => [
+                        '@type' => 'Place',
+                        'name' => $event['event_location_name'] ?? '',
+                        'address' => $address,
+                    ],
+                ];
+
+                // Ajouter l'URL de la location si elle existe
+                if (!empty($event['musicevent_location_url'])) {
+                    $eventData['location']['url'] = $event['musicevent_location_url'];
+                }
+
+                // Ajouter la description si elle existe
+                if (!empty($event['event_description'])) {
+                    $eventData['description'] = $event['event_description'];
+                }
+
+                // Ajouter les offres si elles ne sont pas vides
+                if (count(array_filter($offers)) > 1) { // > 1 car @type est toujours présent
+                    $eventData['offers'] = $offers;
+                }
+
+                // Gestion des dates
+                if (!empty($event['event_startDate'])) {
+                    $startDate = strtotime($event['event_startDate']);
+                    if ($startDate) {
+                        $eventData['startDate'] = date("c", $startDate);
+                    }
+                }
+                if (!empty($event['event_endDate'])) {
+                    $endDate = strtotime($event['event_endDate']);
+                    if ($endDate) {
+                        $eventData['endDate'] = date("c", $endDate);
+                    }
+                }
+
+                $microdata[] = array_filter($eventData, function($value) {
+                    return $value !== null && $value !== '';
+                });
+            }
         }
+    }
+}
+     if (property_exists($page->header(), 'personenabled')) {
+    if ($page->header()->personenabled && $this->config['plugins']['seo']['person']) {
+        $personarray = $page->header()->addperson ?? [];
+        
+        // Vérification que $personarray est un array et n'est pas vide
+        if (is_array($personarray) && !empty($personarray)) {
+            foreach ($personarray as $person) {
+                $microdata[] = [
+                    '@context' => 'http://schema.org',
+                    '@type' => 'Person',
+                    'name' => $person['person_name'] ?? null,
+                    'address' => [
+                        '@type' => 'PostalAddress',
+                        'addressLocality' => $person['person_address_addressLocality'] ?? null,
+                        'addressRegion' => $person['person_address_addressRegion'] ?? null,
+                    ],
+                    'jobTitle' => $person['person_jobTitle'] ?? null,
+                ];
+            }
+        }
+    }
+}
         if (property_exists($page->header(),'orgaenabled')){
        if ($page->header()->orgaenabled and $this->config['plugins']['seo']['organization']) {
         if (isset($page->header()->orga['founders'])){
@@ -650,18 +781,18 @@ class seoPlugin extends Plugin
                 $headline = $page->title();
             }
        if ($page->header()->articleenabled and $this->config['plugins']['seo']['article']) {
-        $microdata['article']      = [
-            '@context' => 'http://schema.org',
-            '@type' => 'Article',
-            'headline' => @$headline ,
-            'mainEntityOfPage' => [
-                "@type" => "WebPage",
-                'url' => $this->grav['uri']->base(),
-            ],
-            'articleBody' =>  @$this->cleanMarkdown($content),
-            'datePublished' => @date("c", $page->date()),
-            'dateModified' => @date("c", $page->modified()),
-        ];
+        $microdata['article'] = [
+    '@context' => 'http://schema.org',
+    '@type' => 'Article',
+    'headline' => $headline,
+    'mainEntityOfPage' => [
+        "@type" => "WebPage",
+        'url' => $this->grav['uri']->base(),
+    ],
+    'articleBody' => $this->cleanMarkdown($content),
+    'datePublished' => date("c", strtotime($page->header()->article['datePublished'] ?? '') ?: $page->date()),
+    'dateModified' => date("c", strtotime($page->header()->article['dateModified'] ?? '') ?: $page->date()),
+];
         if (isset($page->header()->article['description'])) {
             $microdata['article']['description'] = $page->header()->article['description'];
            }
@@ -703,7 +834,7 @@ class seoPlugin extends Plugin
         }
     }*/
     // $microdata = array_map('array_filter', $microdata);
-    $microdata = $this->array_filter_recursive($microdata);
+    $microdata = $this->cleanArray($microdata);
     $customjson = @$page->header()->add_json;
      foreach ($microdata as $key => $value){
         

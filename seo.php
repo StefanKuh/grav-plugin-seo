@@ -208,21 +208,16 @@ private function seoGetImage(?string $imageUrl): array
     public function onPluginsInitialized()
     {
 
-        // Set default events
+        // onBlueprintCreated is registered unconditionally: under Admin2 the
+        // isAdmin() proxy is not available during onPluginsInitialized, and the
+        // API plugin resolves page blueprints without it. The handler is
+        // context-free (it only inspects the blueprint it is handed), so it is
+        // safe to register outside the classic admin check.
         $events = [
             'onTwigTemplatePaths' => ['onTwigTemplatePaths', 0],
+            'onBlueprintCreated' => ['onBlueprintCreated', 0],
            // 'onPageContentRaw' => ['onPageContentRaw', 0],
         ];
-
-        // Set admin specific events
-        if ($this->isAdmin()) {
-            $this->active = false;
-            $events = [
-                'onTwigTemplatePaths' => ['onTwigTemplatePaths', 0],
-                'onBlueprintCreated' => ['onBlueprintCreated', 0],
-               // 'onPageContentRaw' => ['onPageContentRaw', 0],
-            ];
-        }
 
         // Register events
   

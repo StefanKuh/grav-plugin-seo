@@ -13,6 +13,8 @@ license: "MIT/GPL"
 dependencies:
     - { name: grav, version: '>=1.7.0' }
     - { name: admin, version: '>=1.10.0' }
+compatibility:
+  grav: ["2.0"]
 
 form:
   validation: strict

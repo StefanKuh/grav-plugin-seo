@@ -6,3 +6,4 @@ event: true
 organization: true
 musicevent: true
 person: true
+product: true

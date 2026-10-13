@@ -715,26 +715,26 @@ private function seoGetImage(?string $imageUrl): array
        }
         }
     if (property_exists($page->header(),'productenabled')){
-        if ($page->header()->productenabled and $this->config['plugins']['seo']['product']) {
-         if (isset($page->header()->product['image'])){
-             $productimagearray = []; 
-             $productimages = $page->header()->product['image'];
-            
-            
+        $product = property_exists($page->header(),'product') ? $page->header()->product : null;
+        if ($page->header()->productenabled and ($this->config['plugins']['seo']['product'] ?? false) and !empty($product)) {
+         $productimage = [];
+         if (isset($product['image'])){
+             $productimages = $product['image'];
+
              foreach ($productimages as $key => $value){
             $imagearray = $productimages[$key];
             foreach($imagearray as $newkey => $newvalue){
                 $imagedata = $this->seoGetimage($imagearray[$newkey]);
-                $productimage[] = 
+                $productimage[] =
                 $this->grav['uri']->base() .  $imagedata['url'];
-               
+
             };
-            
+
              };
          }
-         if (isset($page->header()->product['addoffer'])){
-             
-             $offers = $page->header()->product['addoffer'];
+         if (isset($product['addoffer'])){
+
+             $offers = $product['addoffer'];
              foreach ($offers as $key => $value){
                  $offer[$key] = [
                       '@type' => 'Offer',
@@ -746,25 +746,25 @@ private function seoGetImage(?string $imageUrl): array
                      ];
              };
          }
-         else { $offer = ''; }       
-            
+         else { $offer = ''; }
+
               $microdata[] = [
                   '@context' => 'http://schema.org',
                   '@type' => 'Product',
-                  'name' => @$page->header()->product['name'],
-                  'category' => @$page->header()->product['category'],
+                  'name' => @$product['name'],
+                  'category' => @$product['category'],
                   'brand' => [
                       '@type' => 'Thing',
-                      'name' => @$page->header()->product['brand'],
+                      'name' => @$product['brand'],
                       ],
                   // 'offers' => $offer,
-                  'description' => @$page->header()->product['description'],
-                  'image' => @$productimage,
+                  'description' => @$product['description'],
+                  'image' => $productimage,
                   'aggregateRating' => [
                       '@type' => 'AggregateRating',
-                      'ratingValue' => @$page->header()->product['ratingValue'],
-                      'reviewCount' => @$page->header()->product['reviewCount'],
-                      
+                      'ratingValue' => @$product['ratingValue'],
+                      'reviewCount' => @$product['reviewCount'],
+
                       ]
                   ];
        }
